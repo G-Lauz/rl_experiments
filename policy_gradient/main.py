@@ -4,8 +4,8 @@ import numpy
 import torch
 import time
 
-from reinforce import reinforce
-from agent import MLPPolicyAgent
+from reinforce import reinforce, reinforce_hf
+from agent import MLPPolicyAgent, Policy
 
 
 def evaluate(agent, environment, n_episodes, max_steps, render=False):
@@ -23,7 +23,7 @@ def evaluate(agent, environment, n_episodes, max_steps, render=False):
                     environment.render()
                     time.sleep(0.01)
 
-                state = torch.from_numpy(state).float().to(agent.device)
+                # state = torch.from_numpy(state).float().to(agent.device)
                 action, _ = agent.act(state)
 
                 state, reward, done, _, _ = environment.step(action)
@@ -62,8 +62,11 @@ def main():
     state_size = training_environment.observation_space.shape[0]
     action_size = training_environment.action_space.n
 
-    agent = MLPPolicyAgent(state_size, action_size, gamma=0.99, alpha=0.0001, device=device)
-    optimizer = torch.optim.Adam(agent.parameters(), lr=agent.alpha)
+    lr = 1e-2
+
+    agent = MLPPolicyAgent(state_size, action_size, gamma=0.99, alpha=lr, device=device)
+    # agent = Policy(state_size, action_size, 16, device=device).to(device)
+    optimizer = torch.optim.Adam(agent.parameters(), lr=lr)
 
     print("_____TRAINING_____")
     reward_history = reinforce(
@@ -74,6 +77,15 @@ def main():
         max_steps=1000,
         verbose=True
     )
+    # reward_history = reinforce_hf(
+    #     agent,
+    #     training_environment,
+    #     optimizer,
+    #     n_training_episodes=1000,
+    #     max_t=1000,
+    #     gamma=0.99,
+    #     print_every=100
+    # )
     plot_reward_history(reward_history)
     training_environment.close()
     print("__________________\n")

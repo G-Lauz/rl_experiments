@@ -58,7 +58,29 @@ class MLPPolicyAgent(Agent):
 
     def act(self, state) -> Tuple[int, float]:
         policy = self.policy(state)
-        action = torch.multinomial(policy, 1).item()
-        log_probability = torch.log(policy[action])
+        distribution = torch.distributions.Categorical(policy)
+        action = distribution.sample()
 
-        return action, log_probability
+        return action.item(), distribution.log_prob(action)
+    
+
+class Policy(torch.nn.Module):
+    def __init__(self, s_size, a_size, h_size, device="cpu"):
+        super(Policy, self).__init__()
+
+        self.device = device
+
+        self.fc1 = torch.nn.Linear(s_size, h_size)
+        self.fc2 = torch.nn.Linear(h_size, a_size)
+
+    def forward(self, x):
+        x = torch.functional.F.relu(self.fc1(x))
+        x = self.fc2(x)
+        return torch.functional.F.softmax(x, dim=1)
+
+    def act(self, state):
+        state = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
+        probs = self.forward(state).cpu()
+        m = torch.distributions.Categorical(probs)
+        action = m.sample()
+        return action.item(), m.log_prob(action)
