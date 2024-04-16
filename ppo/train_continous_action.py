@@ -1,5 +1,5 @@
 """
-Based on https://github.com/vwxyzjn/ppo-implementation-details/blob/main/ppo.py and
+Based on https://github.com/vwxyzjn/ppo-implementation-details.git and
 adapted to https://github.com/SherbyRobotics/pyro.git environment.
 """
 
@@ -13,7 +13,7 @@ import torch
 import gymnasium as gym
 
 import clipy
-from ppo_discrete_action import Agent
+from ppo_continuous_action import Agent
 
 from pyro.dynamic.boat import Boat2D
 
@@ -29,17 +29,25 @@ logger.addHandler(handler)
 
 def make_env(run_name, seed, idx, capture_video=False):
     def thunk():
-        # system = Boat2D()
+        system = Boat2D()
 
-        # env = system.convert_to_gymnasium()
-        # env.render_mode = "rgb_array" if capture_video and idx == 0 else None
+        env = system.convert_to_gymnasium()
+        env.render_mode = "human" if capture_video and idx == 0 else None
 
-        env = gym.make("CartPole-v1", render_mode="rgb_array" if capture_video and idx == 0 else None)
+        # env = gym.make("HalfCheetah-v4", render_mode="rgb_array" if capture_video and idx == 0 else None)
 
         env = gym.wrappers.RecordEpisodeStatistics(env)
 
         if capture_video and idx == 0:
             env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
+
+        env = gym.wrappers.ClipAction(env)
+        env = gym.wrappers.NormalizeObservation(env)
+        # env = gym.wrappers.TransformObservation(env, lambda obs: numpy.clip(obs, system.x_lb, system.x_ub))
+        env = gym.wrappers.TransformObservation(env, lambda obs: numpy.clip(obs, -10, 10))
+        env = gym.wrappers.NormalizeReward(env)
+        # env = gym.wrappers.TransformReward(env, lambda reward: numpy.clip(reward, system.u_lb, system.u_ub))
+        env = gym.wrappers.TransformReward(env, lambda reward: numpy.clip(reward, -10, 10))
 
         # env.seed(seed)
         env.action_space.seed(seed)
@@ -61,18 +69,18 @@ python .\ppo\train.py --cuda --capture-video --n-steps 1000
 """
 @clipy.command()
 @clipy.argument("update-epochs", help="The number of epochs to update the policy", type=int, default=10)
-@clipy.argument("total-timesteps", help="The Total timesteps of the experiments", type=int, default=25000)
-@clipy.argument("n-steps", help="The number of steps to run for each environment per policy rollout", type=int, default=128)
-@clipy.argument("n-envs", help="The number of environments to run in parallel", type=int, default=4)
-@clipy.argument("n-minibatches", help="The number of minibatches to split the batch into", type=int, default=4)
+@clipy.argument("total-timesteps", help="The Total timesteps of the experiments", type=int, default=2000000)
+@clipy.argument("n-steps", help="The number of steps to run for each environment per policy rollout", type=int, default=2048)
+@clipy.argument("n-envs", help="The number of environments to run in parallel", type=int, default=1)
+@clipy.argument("n-minibatches", help="The number of minibatches to split the batch into", type=int, default=32)
 @clipy.argument("cuda", help="Use CUDA if available", action="store_true")
 @clipy.argument("seed", help="The seed for the environment", type=int, default=0)
 @clipy.argument("capture-video", help="Capture video of the first environment", action="store_true")
-@clipy.argument("learning-rate", help="The learning rate for the optimizer", type=float, default=2.5e-4)
+@clipy.argument("learning-rate", help="The learning rate for the optimizer", type=float, default=3e-4)
 @clipy.argument("gamma", help="The discount factor for the returns", type=float, default=0.99)
 def main(*_args, update_epochs, total_timesteps, n_steps, n_envs, n_minibatches, cuda, seed, capture_video, learning_rate, gamma, **_kwargs):    
-    # RUN_NAME = f"ppo_discrete_action_space_{time.strftime('%Y%m%d-%H%M%S')}"
-    RUN_NAME = "ppo_discrete_action_space_overwritten"
+    # RUN_NAME = f"ppo_boat_{time.strftime('%Y%m%d-%H%M%S')}"
+    RUN_NAME = "ppo_boat_overwritten"
 
     batch_size = n_envs * n_steps
     minibatch_size = batch_size // n_minibatches
@@ -84,10 +92,10 @@ def main(*_args, update_epochs, total_timesteps, n_steps, n_envs, n_minibatches,
     torch.manual_seed(seed)
 
     envs = vectorize_envs(RUN_NAME, seed, n_envs, capture_video=False)
-    assert isinstance(envs.single_action_space, gym.spaces.Discrete), "only discrete action space is supported"
+    assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
     eval_env = make_env(RUN_NAME, seed, 0, capture_video=False)()
-    assert isinstance(eval_env.action_space, gym.spaces.Discrete), "only discrete action space is supported"
+    assert isinstance(eval_env.action_space, gym.spaces.Box), "only continuous action space is supported"
 
     agent = Agent(envs).to(device)
     agent.optimizer = torch.optim.Adam(agent.parameters(), lr=learning_rate, eps=1e-5)
@@ -135,7 +143,7 @@ def main(*_args, update_epochs, total_timesteps, n_steps, n_envs, n_minibatches,
 
             next_state, reward, next_done, _trunc, _info = envs.step(action.cpu().numpy())
             rewards[step] = torch.tensor(reward).to(device).reshape(-1)
-            next_state = torch.tensor(next_state).to(device)
+            next_state = torch.tensor(next_state, dtype=torch.float32).to(device)
             next_done = torch.tensor(next_done).to(device)
 
         # Bootstrap the value function
@@ -175,33 +183,33 @@ def main(*_args, update_epochs, total_timesteps, n_steps, n_envs, n_minibatches,
             total_reward = 0
 
             with torch.no_grad():
-                for _ in range(100): # Run 100 episodes
+                for _ in range(10): # Run 100 episodes
                     state = torch.Tensor(eval_env.reset()[0]).to(device)
 
                     for _ in range(n_steps):
                         action, _log_prob, _entropy, _value = agent.get_action_and_value(state)
                         state, reward, done, _trunc, _info = eval_env.step(action.cpu().numpy())
-                        state = torch.tensor(state).to(device)
+                        state = torch.tensor(state, dtype=torch.float32).to(device)
                         total_reward += reward
 
                         if done:
                             break
 
-            logger.info(f"[{update}/{num_updates}] Reward: {total_reward / 100}")
+            logger.info(f"[{update}/{num_updates}] Reward: {total_reward / 10}")
 
     envs.close()
     eval_env.close()
 
     # Test the agent
     test_env = make_env(RUN_NAME, seed, 0, capture_video=capture_video)()
-    assert isinstance(test_env.action_space, gym.spaces.Discrete), "only discrete action space is supported"
+    assert isinstance(test_env.action_space, gym.spaces.Box), "only continuous action space is supported"
 
     total_reward = 0
     state = torch.Tensor(test_env.reset()[0]).to(device)
     for _ in range(n_steps):
         action, _log_prob, _entropy, _value = agent.get_action_and_value(state)
         state, reward, done, _trunc, _info = test_env.step(action.cpu().numpy())
-        state = torch.tensor(state).to(device)
+        state = torch.tensor(state, dtype=torch.float32).to(device)
 
         total_reward += reward
 

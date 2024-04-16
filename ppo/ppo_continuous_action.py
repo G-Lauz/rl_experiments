@@ -33,22 +33,31 @@ class Agent(torch.nn.Module):
         self.entropy_coef = entropy_coef
 
         input_size = numpy.array(envs.single_observation_space.shape).prod()
-        action_size = envs.single_action_space.n
+        action_size = numpy.array(envs.single_action_space.shape).prod()
 
         self.actor = MLP(input_size, action_size, 64, activation=torch.nn.Tanh)
         self.critic = MLP(input_size, 1, 64, activation=torch.nn.Tanh)
+
+        self.actor_std = torch.nn.Parameter(torch.zeros(1, action_size))
 
     def get_value(self, x):
         return self.critic(x)
 
     def get_action_and_value(self, x, action=None):
-        action_logits = self.actor(x)
-        probs = torch.distributions.Categorical(logits=action_logits)
+        action_mean = self.actor(x)
+        action_mean = action_mean.reshape(-1, action_mean.shape[-1])
+        action_log_std = self.actor_std.expand_as(action_mean)
+        action_std = torch.exp(action_log_std)
+
+        probs = torch.distributions.Normal(action_mean, action_std)
 
         if action is None:
             action = probs.sample()
 
-        return action, probs.log_prob(action), probs.entropy(), self.critic(x)
+        if action.shape[0] == 1:
+            action = action.squeeze(0)
+
+        return action, probs.log_prob(action).sum(1), probs.entropy().sum(1), self.critic(x)
 
     def update(self, states, actions, log_probs, advantages, returns, update_epochs=10, mini_batch_size=64):
         dataset = torch.utils.data.TensorDataset(states, actions, log_probs, advantages, returns)
