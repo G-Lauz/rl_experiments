@@ -3,9 +3,10 @@ Based on https://github.com/vwxyzjn/ppo-implementation-details/blob/main/ppo.py 
 adapted to https://github.com/SherbyRobotics/pyro.git environment.
 """
 
+import logging
 import random
 import os
-import time
+import sys
 
 import numpy
 import torch
@@ -17,7 +18,16 @@ from ppo import Agent
 from pyro.dynamic.boat import Boat2D
 
 
-def make_env(seed, idx, capture_video, run_name):
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+handler = logging.StreamHandler(sys.stdout)
+handler.setLevel(logging.INFO)
+formatter = logging.Formatter("[%(asctime)s] [%(name)s/%(levelname)s]: %(message)s", datefmt="%H:%M:%S")
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+
+def make_env(run_name, seed, idx, capture_video=False):
     def thunk():
         # system = Boat2D()
 
@@ -39,14 +49,16 @@ def make_env(seed, idx, capture_video, run_name):
     return thunk
 
 
-def vectorize_envs(seed, n_envs, capture_video, run_name):
+def vectorize_envs(run_name, seed, n_envs, capture_video=False):
     envs = gym.vector.SyncVectorEnv(
-        [make_env(seed, idx, capture_video, run_name) for idx in range(n_envs)]
+        [make_env(run_name, seed, idx, capture_video) for idx in range(n_envs)]
     )
 
     return envs
 
-
+"""
+python .\ppo\train.py --cuda --capture-video --n-steps 1000
+"""
 @clipy.command()
 @clipy.argument("update-epochs", help="The number of epochs to update the policy", type=int, default=10)
 @clipy.argument("total-timesteps", help="The Total timesteps of the experiments", type=int, default=25000)
@@ -71,8 +83,11 @@ def main(*_args, update_epochs, total_timesteps, n_steps, n_envs, n_minibatches,
     numpy.random.seed(seed)
     torch.manual_seed(seed)
 
-    envs = vectorize_envs(seed, n_envs, capture_video, RUN_NAME)
+    envs = vectorize_envs(RUN_NAME, seed, n_envs, capture_video=False)
     assert isinstance(envs.single_action_space, gym.spaces.Discrete), "only discrete action space is supported"
+
+    eval_env = make_env(RUN_NAME, seed, 0, capture_video=False)()
+    assert isinstance(eval_env.action_space, gym.spaces.Discrete), "only discrete action space is supported"
 
     agent = Agent(envs).to(device)
     agent.optimizer = torch.optim.Adam(agent.parameters(), lr=learning_rate, eps=1e-5)
@@ -85,6 +100,24 @@ def main(*_args, update_epochs, total_timesteps, n_steps, n_envs, n_minibatches,
     dones = torch.zeros((n_steps, n_envs)).to(device)
 
     num_updates = total_timesteps // batch_size
+
+    # logging hyperparameters
+    logger.info("=========Hyperparameters=========")
+    logger.info(f"Run Name: {RUN_NAME}")
+    logger.info(f"update_epochs: {update_epochs}")
+    logger.info(f"total_timesteps: {total_timesteps}")
+    logger.info(f"n_steps: {n_steps}")
+    logger.info(f"n_envs: {n_envs}")
+    logger.info(f"n_minibatches: {n_minibatches}")
+    logger.info(f"device: {device}")
+    logger.info(f"seed: {seed}")
+    logger.info(f"capture_video: {capture_video}")
+    logger.info(f"learning_rate: {learning_rate}")
+    logger.info(f"gamma: {gamma}")
+    logger.info(f"num_updates: {num_updates}")
+    logger.info(f"batch_size: {batch_size}")
+    logger.info(f"minibatch_size: {minibatch_size}")
+    logger.info("=================================")
 
     for update in range(1, num_updates + 1):
         next_state = torch.Tensor(envs.reset()[0]).to(device)
@@ -140,23 +173,44 @@ def main(*_args, update_epochs, total_timesteps, n_steps, n_envs, n_minibatches,
         # Evaluate the agent
         if update % 10 == 0:
             total_reward = 0
-            total_episodes = 0
 
             with torch.no_grad():
-                for _ in range(10):
-                    state = torch.Tensor(envs.reset()[0]).to(device)
-                    done = torch.zeros(n_envs).to(device)
+                for _ in range(100): # Run 100 episodes
+                    state = torch.Tensor(eval_env.reset()[0]).to(device)
 
                     for _ in range(n_steps):
                         action, _log_prob, _entropy, _value = agent.get_action_and_value(state)
-                        state, reward, done, _trunc, _info = envs.step(action.cpu().numpy())
+                        state, reward, done, _trunc, _info = eval_env.step(action.cpu().numpy())
                         state = torch.tensor(state).to(device)
-                        total_reward += sum(reward)
-                        total_episodes += sum(done)
+                        total_reward += reward
 
-            print(f"Update: {update}/{num_updates}, Reward: {total_reward / total_episodes}")
+                        if done:
+                            break
+
+            logger.info(f"[{update}/{num_updates}] Reward: {total_reward / 100}")
 
     envs.close()
+    eval_env.close()
+
+    # Test the agent
+    test_env = make_env(RUN_NAME, seed, 0, capture_video=capture_video)()
+    assert isinstance(test_env.action_space, gym.spaces.Discrete), "only discrete action space is supported"
+
+    total_reward = 0
+    state = torch.Tensor(test_env.reset()[0]).to(device)
+    for _ in range(n_steps):
+        action, _log_prob, _entropy, _value = agent.get_action_and_value(state)
+        state, reward, done, _trunc, _info = test_env.step(action.cpu().numpy())
+        state = torch.tensor(state).to(device)
+
+        total_reward += reward
+
+        if done:
+            break
+
+    logger.info(f"Test Reward: {total_reward}")
+
+    test_env.close()
 
     # Save the model
     os.makedirs("models", exist_ok=True)

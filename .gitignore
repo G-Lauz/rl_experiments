@@ -1,3 +1,7 @@
 .venv
 *.pth
 __pycache__
+.idea/
+
+models/
+videos/
