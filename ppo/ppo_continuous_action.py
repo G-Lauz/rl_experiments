@@ -32,6 +32,9 @@ class Agent(torch.nn.Module):
         self.value_coef = value_coef
         self.entropy_coef = entropy_coef
 
+        self.observation_space = envs.single_observation_space
+        self.action_space = envs.single_action_space
+
         input_size = numpy.array(envs.single_observation_space.shape).prod()
         action_size = numpy.array(envs.single_action_space.shape).prod()
 
@@ -58,6 +61,16 @@ class Agent(torch.nn.Module):
             action = action.squeeze(0)
 
         return action, probs.log_prob(action).sum(1), probs.entropy().sum(1), self.critic(x)
+
+    def predict(self, x, deterministic=False):
+        # set the model to evaluation mode
+        self.eval()
+
+        with torch.no_grad():
+            x = torch.tensor(x, dtype=torch.float32)
+            action, _, _, _ = self.get_action_and_value(x)
+
+        return action.cpu().numpy(), x
 
     def update(self, states, actions, log_probs, advantages, returns, update_epochs=10, mini_batch_size=64):
         dataset = torch.utils.data.TensorDataset(states, actions, log_probs, advantages, returns)

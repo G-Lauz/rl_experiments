@@ -1,0 +1,26 @@
+name: default_config
+env:
+  seed: 0
+  n_envs: 32
+  record_video: False
+agent:
+  clip_coef: 0.2
+  value_coef: 0.5
+  entropy_coef: 0.01
+  hidden_size: 64
+train:
+  cuda: True
+  rollout_update: 50
+  total_timesteps: 1000000
+  epochs: 10
+  batch_size: 512
+  learning_rate: 0.0003
+  gamma: 0.99
+  n_steps: 2048
+  max_grad_norm: 0.5
+valid:
+  n_interval: 10
+  n_episodes: 10
+eval:
+  n_episodes: 10
+  n_steps: 2048

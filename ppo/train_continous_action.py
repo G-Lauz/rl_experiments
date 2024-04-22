@@ -12,11 +12,8 @@ import numpy
 import torch
 import gymnasium as gym
 
-import clipy
+from src.rl_experiments.command import clipy
 from ppo_continuous_action import Agent
-
-from pyro.dynamic.boat import Boat2D
-
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -29,12 +26,12 @@ logger.addHandler(handler)
 
 def make_env(run_name, seed, idx, capture_video=False):
     def thunk():
-        system = Boat2D()
+        # system = Boat2D()
+        #
+        # env = system.convert_to_gymnasium()
+        # env.render_mode = "rgb_array" if capture_video and idx == 0 else None
 
-        env = system.convert_to_gymnasium()
-        env.render_mode = "human" if capture_video and idx == 0 else None
-
-        # env = gym.make("HalfCheetah-v4", render_mode="rgb_array" if capture_video and idx == 0 else None)
+        env = gym.make("HalfCheetah-v4", render_mode="rgb_array" if capture_video and idx == 0 else None)
 
         env = gym.wrappers.RecordEpisodeStatistics(env)
 
@@ -42,12 +39,10 @@ def make_env(run_name, seed, idx, capture_video=False):
             env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
 
         env = gym.wrappers.ClipAction(env)
-        env = gym.wrappers.NormalizeObservation(env)
+        # env = gym.wrappers.NormalizeObservation(env)
         # env = gym.wrappers.TransformObservation(env, lambda obs: numpy.clip(obs, system.x_lb, system.x_ub))
-        env = gym.wrappers.TransformObservation(env, lambda obs: numpy.clip(obs, -10, 10))
-        env = gym.wrappers.NormalizeReward(env)
+        # env = gym.wrappers.NormalizeReward(env)
         # env = gym.wrappers.TransformReward(env, lambda reward: numpy.clip(reward, system.u_lb, system.u_ub))
-        env = gym.wrappers.TransformReward(env, lambda reward: numpy.clip(reward, -10, 10))
 
         # env.seed(seed)
         env.action_space.seed(seed)
@@ -200,6 +195,27 @@ def main(*_args, update_epochs, total_timesteps, n_steps, n_envs, n_minibatches,
     envs.close()
     eval_env.close()
 
+    # Save the model
+    os.makedirs("models", exist_ok=True)
+    torch.save(agent.state_dict(), f"models/{RUN_NAME}.pt")
+
+    # Create videos directory
+    os.makedirs("videos", exist_ok=True)
+
+    # # Test the agent
+    # system = Boat2D()
+    #
+    # from pyro.control.reinforcementlearning import stable_baseline3_controller
+    # ppo_ctl = stable_baseline3_controller(agent)
+    # ppo_ctl.plot_control_law(sys=system, n=100)
+    #
+    # # Animating rl closed-loop
+    # cl_sys = ppo_ctl + system
+    # cl_sys.x0 = numpy.array([-1.0, -1.0, 0.0, 0.0, 0.0, 0.0])
+    # cl_sys.compute_trajectory(tf=10.0, n=10000, solver="euler")
+    # cl_sys.plot_trajectory("xu")
+    # cl_sys.animate_simulation()
+
     # Test the agent
     test_env = make_env(RUN_NAME, seed, 0, capture_video=capture_video)()
     assert isinstance(test_env.action_space, gym.spaces.Box), "only continuous action space is supported"
@@ -219,13 +235,6 @@ def main(*_args, update_epochs, total_timesteps, n_steps, n_envs, n_minibatches,
     logger.info(f"Test Reward: {total_reward}")
 
     test_env.close()
-
-    # Save the model
-    os.makedirs("models", exist_ok=True)
-    torch.save(agent.state_dict(), f"models/{RUN_NAME}.pt")
-
-    # Create videos directory
-    os.makedirs("videos", exist_ok=True)
 
 
 if __name__ == '__main__':

@@ -12,11 +12,8 @@ import numpy
 import torch
 import gymnasium as gym
 
-import clipy
+from src.rl_experiments.command import clipy
 from ppo_discrete_action import Agent
-
-from pyro.dynamic.boat import Boat2D
-
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
