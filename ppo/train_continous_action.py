@@ -12,7 +12,7 @@ import numpy
 import torch
 import gymnasium as gym
 
-from src.rl_experiments.command import clipy
+from rl_experiments.command import clipy
 from ppo_continuous_action import Agent
 
 logger = logging.getLogger(__name__)

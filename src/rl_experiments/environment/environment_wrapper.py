@@ -24,9 +24,9 @@ class EnvironmentWrapper(abc.ABC):
 
     def make_env(self, idx: int = 0, record_video : bool = False):
         def wrapper() -> gymnasium.Env:
-            self.env = self._make_env(idx)
+            env = self._make_env(idx)
 
-            env = gymnasium.wrappers.RecordEpisodeStatistics(self.env)
+            env = gymnasium.wrappers.RecordEpisodeStatistics(env)
 
             if record_video and idx == 0:
                 env = gymnasium.wrappers.RecordVideo(env, f"videos/{self.name}")

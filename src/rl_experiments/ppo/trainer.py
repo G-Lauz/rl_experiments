@@ -58,8 +58,8 @@ class Trainer(abc.ABC):
 
                 next_state, reward, next_done, _trunc, _step_info = self.envs.step(action.cpu().numpy())
                 self.rewards[step] = torch.tensor(reward).to(self.device).reshape(-1)
-                next_state = torch.tensor(next_state).to(self.device)
-                next_done = torch.tensor(next_done).to(self.device)
+                next_state = torch.tensor(next_state, dtype=torch.float32).to(self.device)
+                next_done = torch.tensor(next_done, dtype=torch.float32).to(self.device)
 
             # Bootstrap the value function
             with torch.no_grad():

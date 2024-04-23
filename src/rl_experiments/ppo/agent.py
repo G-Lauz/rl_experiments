@@ -137,6 +137,8 @@ class DiscreteAgent(Agent):
     def __init__(self, observation_space: gymnasium.Space, action_space: gymnasium.Space, config: Config):
         super(DiscreteAgent, self).__init__(observation_space, action_space, config)
 
+        self.action_space_size = action_space.n # TODO: Patch, fix this
+
         self.hidden_size = config.agent.hidden_size
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.config.train.learning_rate, eps=1e-5)

@@ -32,9 +32,26 @@ class BoatEnvironmentWrapper(EnvironmentWrapper):
 
         self.system = NormalizedBoat2D()
 
+        # Min/max state and control inputs
+        self.system.x_ub = numpy.array([10, 10, 4 * numpy.pi, 10, 10, 10])
+        self.system.x_lb = -self.system.x_ub
+
+        # Min/max inputs are normalized, scalling is in the B matrix
+        self.system.u_ub = numpy.array([1, 1])
+        self.system.u_lb = numpy.array([-1, -1])
+
+        # Cost function
+        self.system.cost_function.Q = numpy.diag([1, 1, 6., 0.1, 0.1, 1.0])
+        self.system.cost_function.R = numpy.diag([0.001, 0.001])
+
+        # Distribution of initial states
+        self.system.x0 = numpy.array([0.0, 0.0, 0.0, 0, 0, 0])
+        self.x0_std = numpy.array([5.0, 5.0, 1.0, 1.0, 1.0, 0.2])
+
     def _make_env(self, idx: int = 0) -> gymnasium.Env:
         env = self.system.convert_to_gymnasium()
         env.reset_mode = "gaussian"
+        env.x0_std = self.x0_std
         return env
 
 
@@ -87,6 +104,7 @@ def main(config):
     ppo_controller.plot_control_law(sys=eval_env_wrapper.system, n=100)
 
     cl_sys = ppo_controller + eval_env_wrapper.system
+    cl_sys.x0 = numpy.array([-5.0, 5.0, 1.0, 2.0, 0.0, 0.0]) # Initial states
     cl_sys.compute_trajectory(tf=30.0, n=10000, solver="euler")
     cl_sys.plot_trajectory("xu")
     ani = cl_sys.animate_simulation()

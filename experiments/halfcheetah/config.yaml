@@ -1,7 +1,7 @@
-name: ppo_cartpole
+name: ppo_halfcheetah
 env:
   seed: 0
-  n_envs: 4
+  n_envs: 32
   record_video: False
 agent:
   clip_coef: 0.2
@@ -11,16 +11,16 @@ agent:
 train:
   cuda: True
   rollout_update: 50
-  total_timesteps: 25000
-  epochs: 10
-  batch_size: 1024
+  total_timesteps: 1000000
+  epochs: 20
+  batch_size: 64
   learning_rate: 0.00025
-  gamma: 0.99
-  n_steps: 1024
-  max_grad_norm: 0.5
+  gamma: 0.98
+  n_steps: 512
+  max_grad_norm: 0.8
 valid:
   n_interval: 10
   n_episodes: 10
 eval:
   n_episodes: 10
-  n_steps: 1024
+  n_steps: 2048
