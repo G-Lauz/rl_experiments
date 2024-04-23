@@ -1,3 +1,6 @@
+"""
+Based on https://github.com/vwxyzjn/ppo-implementation-details.git
+"""
 import abc
 from logging import Logger
 
