@@ -127,8 +127,13 @@ class Trainer(abc.ABC):
         for _epoch in range(self.config.train.epochs):
             for b_states, b_actions, b_log_probs, b_advantages, b_returns in dataloader:
                 _action, new_log_probs, entropy, new_value = self.agent.get_action_and_value(b_states, b_actions)
-                log_ration = new_log_probs - b_log_probs
-                ratio = torch.exp(log_ration)
+                log_ratio = new_log_probs - b_log_probs
+                ratio = torch.exp(log_ratio)
+
+                approximated_kl = self.compute_approximated_kl(ratio, log_ratio)
+
+                if self.config.train.normalized_advantages:
+                    b_advantages = (b_advantages - b_advantages.mean()) / (b_advantages.std() + 1e-8)
 
                 # Eq. 7. Section 5 of PPO paper
                 # The sign of the advantages, value coefficient and entropy coefficient
@@ -147,6 +152,14 @@ class Trainer(abc.ABC):
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(self.agent.parameters(), self.config.train.max_grad_norm)
                 self.agent.optimizer.step()
+
+            if self.config.agent.target_kl is not None and approximated_kl > self.config.agent.target_kl:
+                break
+
+    def compute_approximated_kl(self, ratio, log_ratio):
+        with torch.no_grad():
+            approximated_kl = (ratio - 1 - log_ratio).mean()
+        return approximated_kl
 
     def validation(self, current_update: int, n_updates: int):
         self.agent.train(False)

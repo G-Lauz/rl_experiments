@@ -70,7 +70,7 @@ class Agent(abc.ABC, torch.nn.Module):
 
         with torch.no_grad():
             # observation to tensor
-            device = torch.device("cuda" if self.config.train.cuda else "cpu") # TODO: Patch, fix this
+            device = torch.device("cuda" if torch.cuda.is_available() and self.config.train.cuda else "cpu") # TODO: Patch, fix this
             x = torch.as_tensor(x, device=device, dtype=torch.float32)
 
             probs = self._get_action_distribution(x)

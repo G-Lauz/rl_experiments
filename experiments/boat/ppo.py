@@ -79,11 +79,7 @@ def main(config):
     env_wrapper.initialize()
 
     agent = None
-    if isinstance(env_wrapper.action_space, gymnasium.spaces.Discrete):
-        agent = DiscreteAgent(env_wrapper.observation_space, env_wrapper.action_space, config)
-    else:
-        agent = ContinuousAgent(env_wrapper.observation_space, env_wrapper.action_space, config)
-
+    agent = ContinuousAgent(env_wrapper.observation_space, env_wrapper.action_space, config)
     agent.initilaize()
 
     trainer = Trainer(agent, env_wrapper, config, logger=logger)

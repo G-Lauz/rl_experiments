@@ -8,6 +8,7 @@ agent:
   value_coef: 0.5
   entropy_coef: 0.01
   hidden_size: 64
+  target_kl: 0.03
 train:
   cuda: True
   rollout_update: 50
@@ -20,6 +21,7 @@ train:
   gae_lambda: 0.95
   n_steps: 1024
   max_grad_norm: 0.5
+  normalized_advantages: True
 valid:
   n_interval: 10
   n_episodes: 10
