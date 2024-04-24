@@ -66,19 +66,38 @@ class Trainer(abc.ABC):
 
             # Bootstrap the value function
             with torch.no_grad():
-                next_value = self.agent.get_value(next_state).reshape(1, -1)
+                last_value = self.agent.get_value(next_state).reshape(1, -1)
 
-                returns = torch.zeros_like(self.rewards).to(self.device)
-                for t in reversed(range(self.config.train.n_steps)):
-                    if t == self.config.train.n_steps - 1:
-                        next_non_terminal = 1.0 - next_done.float()
-                        next_return = next_value
-                    else:
-                        next_non_terminal = 1.0 - self.dones[t + 1].float()
-                        next_return = returns[t + 1]
-                    returns[t] = self.rewards[t] + self.config.train.gamma * next_non_terminal * next_return
+                if self.config.train.gae:
+                    # Generalized Advantage Estimation
+                    advantages = torch.zeros_like(self.rewards).to(self.device)
+                    last_gae_lambda = 0.0
+                    for t in reversed(range(self.config.train.n_steps)):
+                        if t == self.config.train.n_steps - 1:
+                            next_non_terminal = 1.0 - next_done.float()
+                            next_value = last_value
+                        else:
+                            next_non_terminal = 1.0 - self.dones[t + 1].float()
+                            next_value = self.values[t + 1]
 
-                advantages = returns - self.values
+                        delta = self.rewards[t] + self.config.train.gamma * next_non_terminal * next_value - self.values[t]
+                        last_gae_lambda = delta + self.config.train.gamma * self.config.train.gae_lambda * next_non_terminal * last_gae_lambda
+                        advantages[t] = last_gae_lambda
+
+                    returns = advantages + self.values
+                else:
+                    returns = torch.zeros_like(self.rewards).to(self.device)
+                    for t in reversed(range(self.config.train.n_steps)):
+                        if t == self.config.train.n_steps - 1:
+                            next_non_terminal = 1.0 - next_done.float()
+                            next_return = last_value
+                        else:
+                            next_non_terminal = 1.0 - self.dones[t + 1].float()
+                            next_return = returns[t + 1]
+
+                        returns[t] = self.rewards[t] + self.config.train.gamma * next_non_terminal * next_return
+
+                    advantages = returns - self.values
 
             # Flatten the data
             self.states = self.states.reshape((-1,) + self.envs.single_observation_space.shape)

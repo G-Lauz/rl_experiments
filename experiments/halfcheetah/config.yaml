@@ -16,6 +16,8 @@ train:
   batch_size: 64
   learning_rate: 0.00025
   gamma: 0.98
+  gae: True
+  gae_lambda: 0.92
   n_steps: 512
   max_grad_norm: 0.8
 valid:
