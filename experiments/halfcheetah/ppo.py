@@ -41,6 +41,8 @@ def main(config):
 
     env_wrapper.close()
 
+    trainer.plot_metrics()
+
     # Save the model
     os.makedirs("models", exist_ok=True)
     agent.save(f"models/{config.name}.pt")
@@ -51,7 +53,7 @@ def main(config):
     # Evaluate the model
     env_wrapper.record_video = True
     test_env = env_wrapper.make_env(0, record_video=True)() # TODO: Patch, fix this
-    device = torch.device("cuda" if config.train.cuda else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() and config.train.cuda else "cpu")
 
     total_reward = 0
     state, _ = test_env.reset()

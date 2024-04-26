@@ -1,14 +1,14 @@
 name: ppo_boat
 env:
   seed: 0
-  n_envs: 4
+  n_envs: 32
   record_video: False
 agent:
   clip_coef: 0.2
   value_coef: 0.5
   entropy_coef: 0.01
   hidden_size: 64
-  target_kl: 0.03
+  # target_kl: 0.03
 train:
   cuda: True
   rollout_update: 50

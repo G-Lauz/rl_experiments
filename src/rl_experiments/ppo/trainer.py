@@ -2,14 +2,17 @@
 Based on https://github.com/vwxyzjn/ppo-implementation-details.git
 """
 import abc
+import pathlib
 from logging import Logger
 
+import matplotlib.pyplot as plt
 import numpy
 import torch
 
 from rl_experiments.config import Config
 from rl_experiments.environment import EnvironmentWrapper
 from rl_experiments.ppo import Agent
+from rl_experiments.metrics import Metrics
 
 
 class Trainer(abc.ABC):
@@ -34,6 +37,8 @@ class Trainer(abc.ABC):
         self.rewards = torch.zeros(self.buffer_dim).to(self.device)
         self.values = torch.zeros(self.buffer_dim).to(self.device)
         self.dones = torch.zeros(self.buffer_dim).to(self.device)
+
+        self.metrics = Metrics()
 
     def train(self):
         self.agent.train(True)
@@ -109,6 +114,12 @@ class Trainer(abc.ABC):
 
             self.update_agent(self.states, self.actions, self.log_probs, advantages, returns)
 
+            # Compute the explained variance
+            with torch.no_grad():
+                explained_variance = 1 - (self.values - returns).var() / returns.var()
+
+            self.metrics.explained_variance = numpy.append(self.metrics.explained_variance, explained_variance)
+
             # Reshape the data for next iteration
             self.states = self.states.reshape(self.buffer_dim + self.envs.single_observation_space.shape)
             self.actions = self.actions.reshape(self.buffer_dim + self.envs.single_action_space.shape)
@@ -116,8 +127,8 @@ class Trainer(abc.ABC):
             self.values = self.values.reshape(self.buffer_dim)
 
             # Validate the agent
-            if update % self.config.valid.n_interval == 0:
-                self.validation(current_update=update, n_updates=rollout_update)
+            # if update % self.config.valid.n_interval == 0:
+            #     self.validation(current_update=update, n_updates=rollout_update)
 
     def update_agent(self, states, actions, log_probs, advantages, returns):
         dataset = torch.utils.data.TensorDataset(states, actions, log_probs, advantages, returns)
@@ -143,18 +154,24 @@ class Trainer(abc.ABC):
                 policy_gradient_loss2 = -b_advantages * torch.clamp(ratio, 1 - self.agent.clip_coef, 1 + self.agent.clip_coef)
                 policy_gradient_loss = torch.max(policy_gradient_loss1, policy_gradient_loss2).mean()
 
-                value_loss = 0.5 * ((b_returns - new_value) ** 2).mean()
+                new_value = new_value.view(-1)
+                value_loss = 0.5 * ((new_value - b_returns) ** 2).mean()
 
                 # Eq. 9. Section 5 of PPO paper
                 loss = policy_gradient_loss + self.agent.value_coef * value_loss - self.agent.entropy_coef * entropy.mean()
+
+                self.metrics.policy_loss = numpy.append(self.metrics.policy_loss, policy_gradient_loss.item())
+                self.metrics.value_loss = numpy.append(self.metrics.value_loss, value_loss.item())
+                self.metrics.entropy = numpy.append(self.metrics.entropy, entropy.mean().item())
+                self.metrics.loss = numpy.append(self.metrics.loss, loss.item())
 
                 self.agent.optimizer.zero_grad()
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(self.agent.parameters(), self.config.train.max_grad_norm)
                 self.agent.optimizer.step()
 
-            if self.config.agent.target_kl is not None and approximated_kl > self.config.agent.target_kl:
-                break
+            # if self.config.agent.target_kl is not None and approximated_kl > self.config.agent.target_kl:
+            #     break
 
     def compute_approximated_kl(self, ratio, log_ratio):
         with torch.no_grad():
@@ -164,23 +181,61 @@ class Trainer(abc.ABC):
     def validation(self, current_update: int, n_updates: int):
         self.agent.train(False)
 
-        total_reward = 0
-        for _ in range(self.config.valid.n_episodes):
-            state, _info = self.envs.reset()
+        with torch.no_grad():
+            total_reward = 0
+            for _ in range(self.config.valid.n_episodes):
+                state, _info = self.envs.reset()
 
-            for _ in range(self.config.train.n_steps):
-                state = torch.tensor(state, dtype=torch.float32).to(self.device)
-                action, _, _, _ = self.agent.get_action_and_value(state)
-                state, reward, done, _, _ = self.envs.step(action.cpu().numpy())
-                total_reward += reward
+                for _ in range(self.config.train.n_steps):
+                    state = torch.tensor(state, dtype=torch.float32).to(self.device)
+                    action, _, _, _ = self.agent.get_action_and_value(state)
+                    state, reward, done, _, _ = self.envs.step(action.cpu().numpy())
+                    total_reward += reward
 
-                # TODO should create its own environment for validation, total_reward might be inflated
-                # if done:
-                #     break
+                    # TODO should create its own environment for validation, total_reward might be inflated
+                    # if done:
+                    #     break
 
-        total_reward = numpy.mean(total_reward) # TODO: fix (see comment above)
+            total_reward = numpy.mean(total_reward) # TODO: fix (see comment above)
 
-        self.logger.info(f"[{current_update}/{n_updates}] Validation average reward: {total_reward / self.config.valid.n_episodes}")
+            self.logger.info(f"[{current_update}/{n_updates}] Validation average reward: {total_reward / self.config.valid.n_episodes}")
 
         self.agent.train(True)
 
+    def plot_metrics(self, path: str):
+        path = pathlib.Path(path)
+
+        plt.figure()
+        plt.plot(self.metrics.explained_variance)
+        plt.xlabel("Updates")
+        plt.ylabel("Explained variance")
+        plt.grid()
+        plt.savefig(path / "explained_variance.png")
+
+        plt.figure()
+        plt.plot(self.metrics.policy_loss)
+        plt.xlabel("Updates")
+        plt.ylabel("Policy loss")
+        plt.grid()
+        plt.savefig(path / "policy_loss.png")
+
+        plt.figure()
+        plt.plot(self.metrics.value_loss)
+        plt.xlabel("Updates")
+        plt.ylabel("Value loss")
+        plt.grid()
+        plt.savefig(path / "value_loss.png")
+
+        plt.figure()
+        plt.plot(self.metrics.entropy)
+        plt.xlabel("Updates")
+        plt.ylabel("Entropy")
+        plt.grid()
+        plt.savefig(path / "entropy.png")
+
+        plt.figure()
+        plt.plot(self.metrics.loss)
+        plt.xlabel("Updates")
+        plt.ylabel("Loss")
+        plt.grid()
+        plt.savefig(path / "loss.png")

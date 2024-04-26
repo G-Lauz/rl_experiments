@@ -12,7 +12,7 @@ agent:
 train:
   cuda: True
   rollout_update: 50
-  total_timesteps: 25000
+  total_timesteps: 1000000
   epochs: 10
   batch_size: 1024
   learning_rate: 0.00025

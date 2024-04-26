@@ -87,6 +87,9 @@ def main(config):
 
     env_wrapper.close()
 
+    os.makedirs("metrics", exist_ok=True)
+    trainer.plot_metrics("metrics")
+
     # Save the model
     os.makedirs("models", exist_ok=True)
     agent.save(f"models/{config.name}.pt")
